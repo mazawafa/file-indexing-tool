@@ -1,17 +1,35 @@
-#include <dirent.h> // readdir()
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h> // getcwd()
+#include <string.h>
+#include <unistd.h>
+
+#define BUF_SIZE 1000
+
+/* Very simple hash function */
+size_t simple_hash(const char* s) {
+    size_t sum, i;
+    sum = i = 0;
+    while (s[i] != '\0') {
+        sum = sum + s[i];
+        ++i;
+    }
+    return sum;
+}
 
 int main(int argc, char* argv[]) {
-    char* dname = NULL;
+    const char* hash_table[BUF_SIZE];
+    memset(hash_table, 0, (sizeof hash_table[0]) * BUF_SIZE);
 
+    /* Get current working directory name */
+    char* dname = NULL;
     if ((dname = getcwd(dname, 0)) == NULL) {
         fprintf(stderr, "error getting current working directory\n");
         return EXIT_FAILURE;
     }
 
+    /* Open current working directory */
     DIR* dp;
     if ((dp = opendir(dname)) == NULL) {
         fprintf(stderr, "error opening %s\n", dname);
@@ -19,12 +37,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    struct dirent* ent;
-    errno = 0;
-    while ((ent = readdir(dp)) != NULL) {
-        printf("%s\n", ent->d_name);
+    /* Read current working directory and hash filenames */
+    struct dirent* e;
+    const char* e_name;
+    errno = 0; // set before readdir
+    while ((e = readdir(dp)) != NULL) {
+        e_name = e->d_name;
+        hash_table[simple_hash(e_name) % BUF_SIZE] = e_name;
     }
-    if (ent == NULL && errno) {
+    if (e == NULL && errno) {
         perror("readdir");
         free(dname);
         return EXIT_FAILURE;
