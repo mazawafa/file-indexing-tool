@@ -22,6 +22,12 @@ int main(int argc, char* argv[]) {
     const char* hash_table[BUF_SIZE];
     memset(hash_table, 0, (sizeof hash_table[0]) * BUF_SIZE);
 
+    /* Check command line arguments */
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s FILENAME ...\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
     /* Get current working directory name */
     char* dname = NULL;
     if ((dname = getcwd(dname, 0)) == NULL) {
@@ -50,6 +56,17 @@ int main(int argc, char* argv[]) {
         free(dname);
         return EXIT_FAILURE;
     }
+
+    /* Print table entry if any */
+    int fname;
+    for (int i = 1; i < argc; ++i) {
+        fname = simple_hash(argv[i]) % BUF_SIZE;
+        if (hash_table[fname] != NULL) {
+            printf("%s\n", hash_table[fname]);
+        } else {
+            printf("no entry\n");
+        }
+    } 
 
     free(dname);
     return EXIT_SUCCESS;
