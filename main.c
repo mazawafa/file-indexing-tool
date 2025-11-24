@@ -1,16 +1,16 @@
 #include <dirent.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdint.h>
 
-#define BUF_SIZE 1000
+#define HT_SIZE 1000
 
 /* Very simple hash function */
-uint32_t simple_hash(const char* s) {
-    uint32_t sum, i;
+unsigned int simple_hash(const char* s) {
+    unsigned int sum, i;
     sum = i = 0;
     while (s[i] != '\0') {
         sum = sum + s[i];
@@ -19,36 +19,16 @@ uint32_t simple_hash(const char* s) {
     return sum;
 }
 
-DIR *opencwd() {
-    char *dname = NULL;
-    if ((dname = getcwd(dname, 0)) == NULL) {
-        perror("getcwd");
-        exit(EXIT_FAILURE);
-    }
-
-    DIR *dp;
-    if ((dp = opendir(dname)) == NULL) {
-        perror("opendir");
-        free(dname);
-        exit(EXIT_FAILURE);
-    }
-    free(dname);
-
-    return dp;
-}
-
-void set_dir_hash_table(unsigned int (*hash_func)(const char *),
-                        DIR* dp, const char *ht[], size_t sz) {
+/* Set hash table array from directory content */
+void set_ht_from_dir(DIR* dp, const char* ht[], size_t sz,
+                     unsigned int (*hash_func)(const char*)) {
     struct dirent* e;
-    const char* e_name;
 
     errno = 0;
     while ((e = readdir(dp)) != NULL) {
-        e_name = e->d_name;
-        ht[(*hash_func)(e_name) % sz] = e_name;
+        ht[(*hash_func)(e->d_name) % sz] = e->d_name;
     }
-    closedir(dp);
-    
+
     /* Catch error */
     if (e == NULL && errno) {
         perror("readdir");
@@ -56,7 +36,22 @@ void set_dir_hash_table(unsigned int (*hash_func)(const char *),
     }
 }
 
-void print_hash_table(const char *ht[], size_t sz) {
+void save_ht_to_file(const char* ht[], size_t sz, FILE* fp) {
+    size_t i;
+    uint8_t len;
+    for (i = 0; i < sz; ++i) {
+        if (ht[i] != NULL) {
+            fwrite(&i, sizeof i, 1, fp);
+
+            /* Add check for overflow */
+            len = (uint8_t)strlen(ht[i]);
+            fwrite(&len, sizeof len, 1, fp);
+            fwrite(ht[i], 1, len, fp);
+        }
+    }
+}
+
+void print_hash_table(const char* ht[], size_t sz) {
     int wid = 10;
 
     size_t i;
@@ -67,8 +62,8 @@ void print_hash_table(const char *ht[], size_t sz) {
     }
 }
 
-void print_ent_in_hash(unsigned int (*hash_func)(const char *),
-                       const char *ht[], size_t sz, const char *fname) {
+void print_ent_in_hash(unsigned int (*hash_func)(const char*), const char* ht[],
+                       size_t sz, const char* fname) {
     if (ht[(*hash_func)(fname) % sz] != NULL) {
         printf("%s\n", fname);
     } else {
@@ -77,33 +72,49 @@ void print_ent_in_hash(unsigned int (*hash_func)(const char *),
 }
 
 int main(int argc, char* argv[]) {
-    const char* hash_fname = ".hash_table";
-    const char* hash_table[BUF_SIZE];
-    memset(hash_table, 0, (sizeof hash_table[0]) * BUF_SIZE);
+    const char* const ht_fname = argv[1];    // File that contain hash table
+    const char* ht[HT_SIZE];                 // Hash table array
+    memset(ht, 0, (sizeof ht[0]) * HT_SIZE); // Set array elements to NULL
 
     /* Check command line arguments */
-    if (argc < 2) {
-        fprintf(stderr, "usage: %s FILENAME ...\n", argv[0]);
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s HASHTABLE FILENAME...\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    /* Open current working directory */
-    DIR *dp = opencwd();
-    
-    /* Open hash table file */
-    FILE* hash_fp;
-    if ((hash_fp = fopen(hash_fname, "rb+")) == NULL) {
+    /* Get current working directory */
+    char* dname = NULL;
+    if ((dname = getcwd(dname, 0)) == NULL) {
+        perror("getcwd");
+        return EXIT_FAILURE;
+    }
+
+    /* Open directory */
+    DIR* dp = opendir(dname);
+    free(dname);
+    if (dp == NULL) {
+        perror("opendir");
+        return EXIT_FAILURE;
+    }
+
+    /* Open file that contain hash table */
+    FILE* ht_fp;
+    if ((ht_fp = fopen(ht_fname, "rb+")) == NULL) {
         perror("fopen");
         return EXIT_FAILURE;
     }
 
-    set_dir_hash_table(&simple_hash, dp, hash_table, BUF_SIZE);
-    // print_hash_table(hash_table, BUF_SIZE);
+    // load_ht_from_file(ht_fp, ht, HT_SIZE);
+    set_ht_from_dir(dp, ht, HT_SIZE, &simple_hash);
+    closedir(dp);
+    print_hash_table(ht, HT_SIZE);
+    save_ht_to_file(ht, HT_SIZE, ht_fp);
 
     /* Print table entry if any */
-    for (int i = 1; i < argc; ++i) {
+    /* for (int i = 1; i < argc; ++i) {
         print_ent_in_hash(&simple_hash, hash_table, BUF_SIZE, argv[i]);
-    }
+    } */
 
+    fclose(ht_fp);
     return EXIT_SUCCESS;
 }
